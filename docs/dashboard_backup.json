@@ -1,0 +1,124 @@
+{
+  "_comment": "Snapshot of a specific HA instance. Entity IDs and hostnames are environment-specific — see local_env.md.",
+  "version": 1,
+  "minor_version": 1,
+  "key": "lovelace.dashboard_cameras",
+  "data": {
+    "config": {
+      "views": [
+        {
+          "title": "Home",
+          "cards": [
+            {
+              "show_state": false,
+              "show_name": false,
+              "camera_view": "live",
+              "type": "picture-entity",
+              "entity": "camera.front_garden_doorbell_fluent",
+              "camera_image": "camera.front_garden_doorbell_fluent"
+            },
+            {
+              "show_state": false,
+              "show_name": false,
+              "camera_view": "live",
+              "type": "picture-entity",
+              "entity": "camera.front_garden_camera",
+              "camera_image": "camera.front_garden_camera"
+            },
+            {
+              "show_state": false,
+              "show_name": false,
+              "camera_view": "live",
+              "type": "picture-entity",
+              "entity": "camera.back_doors",
+              "camera_image": "camera.back_doors"
+            },
+            {
+              "show_state": false,
+              "show_name": false,
+              "camera_view": "live",
+              "type": "picture-entity",
+              "entity": "camera.back_garden_camera",
+              "camera_image": "camera.back_garden_camera"
+            },
+            {
+              "show_state": false,
+              "show_name": false,
+              "camera_view": "live",
+              "type": "picture-entity",
+              "entity": "camera.left_side_camera",
+              "camera_image": "camera.left_side_camera"
+            },
+            {
+              "show_state": false,
+              "show_name": false,
+              "camera_view": "live",
+              "type": "picture-entity",
+              "entity": "camera.right_side_camera",
+              "camera_image": "camera.right_side_camera"
+            }
+          ]
+        },
+        {
+          "title": "Doorbell",
+          "path": "doorbell",
+          "icon": "mdi:doorbell-video",
+          "cards": [
+            {
+              "show_state": false,
+              "show_name": false,
+              "camera_view": "live",
+              "type": "picture-entity",
+              "entity": "camera.front_garden_doorbell_fluent",
+              "camera_image": "camera.front_garden_doorbell_fluent"
+            },
+            {
+              "type": "markdown",
+              "content": "[today](/media-browser/browser/app%2Cmedia-source%3A%2F%2Fmedia_source%2Flocal%2Fsecurity%2Fdoorbell%2F{{as_timestamp(now()) | timestamp_custom('%Y%%2F%m%%2F%d', True) }})\n[yesterday](/media-browser/browser/app%2Cmedia-source%3A%2F%2Fmedia_source%2Flocal%2Fsecurity%2Fdoorbell%2F{{(as_timestamp(now()) - 3600*24) | timestamp_custom('%Y%%2F%m%%2F%d', True) }})",
+              "title": "Camera history"
+            }
+          ]
+        },
+        {
+          "type": "custom:vertical-layout",
+          "path": "mango",
+          "title": "mango",
+          "icon": "mdi:bird",
+          "cards": [
+            {
+              "type": "custom:webrtc-camera",
+              "url": "rtsp://neolink.sg10.dedyn.io:8554/mango/main"
+            },
+            {
+              "type": "entities",
+              "entities": [
+                {
+                  "entity": "select.mango_ptz_preset"
+                }
+              ]
+            },
+            {
+              "type": "history-graph",
+              "entities": [
+                {
+                  "entity": "binary_sensor.mango_motion",
+                  "name": {
+                    "type": "entity"
+                  }
+                },
+                {
+                  "entity": "sensor.mango_cage_thermometer_temperature"
+                },
+                {
+                  "entity": "sensor.mango_cage_thermometer_humidity"
+                }
+              ],
+              "hours_to_show": 6
+            }
+          ]
+        }
+      ],
+      "title": "Doorbell"
+    }
+  }
+}
