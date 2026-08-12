@@ -1,6 +1,8 @@
 import { LitElement, html, css, PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { MediaBrowser } from "./media-browser";
+import { resolveMediaUrl } from "./media-resolver";
+import { downloadUrl } from "./download-media";
 import type {
   DoorbellNvrCardConfig,
   HomeAssistant,
@@ -187,6 +189,16 @@ export class DoorbellNvrCard extends LitElement {
     this._playMedia(this._dayData.timelapseMediaId, "Timelapse");
   }
 
+  private async _downloadMedia(mediaContentId: string, filename: string): Promise<void> {
+    if (!this.hass) return;
+    try {
+      const url = await resolveMediaUrl(this.hass, mediaContentId);
+      downloadUrl(url, filename);
+    } catch (e) {
+      console.error("[doorbell-nvr] _downloadMedia failed:", e);
+    }
+  }
+
   private _formatDate(date: Date): string {
     return date.toLocaleDateString(undefined, {
       weekday: "short",
@@ -231,12 +243,27 @@ export class DoorbellNvrCard extends LitElement {
         </div>
         ${showTimelapse
           ? html`
-              <button class="timelapse-btn" @click=${this._playTimelapse}>
-                <svg viewBox="0 0 24 24" width="18" height="18">
-                  <path d="M8 5v14l11-7z" fill="currentColor" />
-                </svg>
-                Timelapse
-              </button>
+              <div class="timelapse-actions">
+                <button class="timelapse-btn" @click=${this._playTimelapse}>
+                  <svg viewBox="0 0 24 24" width="18" height="18">
+                    <path d="M8 5v14l11-7z" fill="currentColor" />
+                  </svg>
+                  Timelapse
+                </button>
+                <button
+                  class="timelapse-download-btn"
+                  title="Download timelapse"
+                  @click=${() =>
+                    this._downloadMedia(
+                      this._dayData!.timelapseMediaId!,
+                      "timelapse.mp4"
+                    )}
+                >
+                  <svg viewBox="0 0 24 24" width="18" height="18">
+                    <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" fill="currentColor" />
+                  </svg>
+                </button>
+              </div>
             `
           : html``}
       </div>
@@ -293,6 +320,18 @@ export class DoorbellNvrCard extends LitElement {
               <path d="M8 5v14l11-7z" fill="currentColor" />
             </svg>
           </div>
+          <button
+            class="event-download-btn"
+            title="Download"
+            @click=${(e: Event) => {
+              e.stopPropagation();
+              this._downloadMedia(event.videoMediaId, event.mp4Filename);
+            }}
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18">
+              <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" fill="currentColor" />
+            </svg>
+          </button>
         </div>
         <div class="event-time">${this._formatTime(event.timestamp)}</div>
       </div>
@@ -411,6 +450,49 @@ export class DoorbellNvrCard extends LitElement {
 
     .timelapse-btn:hover {
       opacity: 0.9;
+    }
+
+    .timelapse-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .timelapse-download-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--secondary-background-color);
+      color: var(--primary-text-color);
+      border: none;
+      padding: 6px;
+      border-radius: 50%;
+      cursor: pointer;
+    }
+
+    .timelapse-download-btn:hover {
+      background: var(--primary-color);
+      color: white;
+    }
+
+    .event-download-btn {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.5);
+      color: white;
+      border: none;
+      padding: 6px;
+      border-radius: 50%;
+      cursor: pointer;
+    }
+
+    .event-download-btn:hover {
+      background: var(--primary-color);
     }
 
     .week-strip {
