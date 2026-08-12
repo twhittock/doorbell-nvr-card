@@ -9,7 +9,6 @@ import type {
   DayData,
   WeekDay,
   DoorbellEvent,
-  ResolvedMedia,
 } from "./types";
 
 console.info(
@@ -146,11 +145,8 @@ export class DoorbellNvrCard extends LitElement {
     await Promise.all(
       jpgEvents.map(async (e) => {
         try {
-          const resolved = await this.hass!.callWS<ResolvedMedia>({
-            type: "media_source/resolve_media",
-            media_content_id: e.thumbnailMediaId,
-          });
-          urls.set(e.thumbnailMediaId, resolved.url);
+          const url = await resolveMediaUrl(this.hass!, e.thumbnailMediaId);
+          urls.set(e.thumbnailMediaId, url);
         } catch {
           // Skip thumbnails that fail to resolve
         }
@@ -163,11 +159,8 @@ export class DoorbellNvrCard extends LitElement {
     if (!this.hass) return;
     this._playerTitle = title;
     try {
-      const resolved = await this.hass.callWS<ResolvedMedia>({
-        type: "media_source/resolve_media",
-        media_content_id: mediaContentId,
-      });
-      this._playerUrl = resolved.url;
+      const url = await resolveMediaUrl(this.hass, mediaContentId);
+      this._playerUrl = url;
     } catch (e) {
       console.error("[doorbell-nvr] _playMedia failed:", e);
       this._playerUrl = undefined;
