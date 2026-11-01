@@ -6,7 +6,7 @@ Build and deploy the `doorbell-nvr-card` custom Lovelace card to the Home Assist
 
 ## Environment
 
-All hostnames, paths, and entity IDs are in **`local_env.md`** (gitignored). Key variables:
+All hostnames, paths, and entity IDs are in **`local_env.md`** (gitignored, optional). Key variables:
 
 | Key | Description |
 |-----|-------------|
@@ -14,6 +14,8 @@ All hostnames, paths, and entity IDs are in **`local_env.md`** (gitignored). Key
 | `HA_SSH_HOST` | SSH alias or hostname for HA host |
 | `HOMEASSISTANT_ENV` | Path to env file exporting `HOMEASSISTANT_URL` and `HOMEASSISTANT_TOKEN` |
 | `HA_API_HELPER` | Path to `ha-api` helper script (optional) |
+
+The deploy script resolves credentials without any manual setup from `$HOMEASSISTANT_ENV`, then `<project>/secrets/homeassistant.env`, then `<project>/../system/sysadmin/secrets/homeassistant.env`.
 
 **CRITICAL**: NEVER directly edit `/config/.storage/` files — always use the HA REST API
 
@@ -24,10 +26,12 @@ npm run build && bash scripts/deploy.sh
 ```
 
 The deploy script:
-1. SCPs `dist/doorbell-nvr-card.js` to `root@{HA_SSH_HOST}:/config/www/community/doorbell-nvr-card/`
-2. Uses HA WebSocket API to delete old lovelace resource entry and create new one with updated `?hacstag=` cache-busting query string
-3. Uses `ws` npm package (dev dependency) for WebSocket communication
-4. Prints the result — check for "Deployment complete!" message
+1. SCPs `dist/doorbell-nvr-card.js` to `root@{HA_SSH_HOST}:/config/www/community/doorbell-nvr-card/` via a temp file and atomic rename
+2. Verifies the remote SHA-256 matches the local build
+3. Uses HA WebSocket API to update (or create) the lovelace resource with a content-hash `?hacstag=` cache-busting query string
+4. Re-lists resources and fetches the served URL from HA, verifying the served SHA-256 matches the local build
+5. Uses `ws` npm package (dev dependency) for WebSocket communication
+6. Prints "Deployment complete!" only after all checks pass
 
 ## Verify Deployment
 

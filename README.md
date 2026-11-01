@@ -133,7 +133,7 @@ See `AGENTS.md` and `local_env.md` for deploy configuration. In short:
 npm run build && bash scripts/deploy.sh
 ```
 
-The deploy script copies the built JS file to your HA instance via SCP and updates the `lovelace_resources` cache-busting tag via WebSocket API.
+The deploy script copies the built JS file to your HA instance via SCP, updates the `lovelace_resources` cache-busting tag via WebSocket API, and verifies that HA serves the deployed build. It finds credentials from `$HOMEASSISTANT_ENV`, `secrets/homeassistant.env`, or the sibling `system/sysadmin/secrets/homeassistant.env`.
 
 ## Technology
 

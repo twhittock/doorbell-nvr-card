@@ -3,112 +3,74 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-CARD_FILE="${PROJECT_DIR}/dist/doorbell-nvr-card.js"
+CARD_NAME="doorbell-nvr-card"
+CARD_FILE="${PROJECT_DIR}/dist/${CARD_NAME}.js"
 HA_HOST="${HA_SSH_HOST:-homeassistant}"
-HA_REMOTE_DIR="/config/www/community/doorbell-nvr-card"
-HA_REMOTE_FILE="${HA_REMOTE_DIR}/doorbell-nvr-card.js"
-RESOURCE_URL_BASE="/hacsfiles/doorbell-nvr-card/doorbell-nvr-card.js"
+HA_REMOTE_DIR="${HA_REMOTE_DIR:-/config/www/community/${CARD_NAME}}"
+HA_REMOTE_FILE="${HA_REMOTE_DIR}/${CARD_NAME}.js"
+RESOURCE_URL_BASE="${RESOURCE_URL_BASE:-/hacsfiles/${CARD_NAME}/${CARD_NAME}.js}"
 
-# Source HA credentials — search project-local path first, then HOMEASSISTANT_ENV
-ENV_FILE=""
-if [[ -n "${HOMEASSISTANT_ENV:-}" ]] && [[ -f "$HOMEASSISTANT_ENV" ]]; then
-    ENV_FILE="$HOMEASSISTANT_ENV"
-elif [[ -f "${SCRIPT_DIR}/../secrets/homeassistant.env" ]]; then
-    ENV_FILE="${SCRIPT_DIR}/../secrets/homeassistant.env"
-else
-    echo "ERROR: homeassistant.env not found. Set HOMEASSISTANT_ENV or create secrets/homeassistant.env" >&2
+die() {
+    echo "ERROR: $*" >&2
     exit 1
+}
+
+# Resolve HA credentials: explicit override, project-local secret, then the
+# system repo's shared secret file.
+ENV_FILE="${HOMEASSISTANT_ENV:-}"
+if [[ -z "$ENV_FILE" ]]; then
+    for candidate in \
+        "${PROJECT_DIR}/secrets/homeassistant.env" \
+        "${PROJECT_DIR}/../system/sysadmin/secrets/homeassistant.env"; do
+        if [[ -f "$candidate" ]]; then
+            ENV_FILE="$candidate"
+            break
+        fi
+    done
 fi
+[[ -n "$ENV_FILE" && -f "$ENV_FILE" ]] || die \
+    "homeassistant.env not found. Set HOMEASSISTANT_ENV or place it in secrets/homeassistant.env"
 source "$ENV_FILE"
+: "${HOMEASSISTANT_URL:?HOMEASSISTANT_URL is not set in $ENV_FILE}"
+: "${HOMEASSISTANT_TOKEN:?HOMEASSISTANT_TOKEN is not set in $ENV_FILE}"
 
-if [[ ! -f "$CARD_FILE" ]]; then
-    echo "ERROR: Build output not found at $CARD_FILE"
-    echo "Run 'npm run build' first."
-    exit 1
-fi
+[[ -f "$CARD_FILE" ]] || die "build output not found at $CARD_FILE (run 'npm run build' first)"
+[[ -d "${PROJECT_DIR}/node_modules/ws" ]] || die "missing ws dependency (run 'npm install')"
 
-echo "Deploying doorbell-nvr-card to HA..."
+SSH_TARGET="$HA_HOST"
+[[ "$SSH_TARGET" == *@* ]] || SSH_TARGET="root@${SSH_TARGET}"
 
-echo "1. Creating remote directory..."
-ssh "root@${HA_HOST}" "mkdir -p ${HA_REMOTE_DIR}"
+WORK_FILE="$(mktemp)"
+trap 'rm -f "$WORK_FILE"' EXIT
 
-echo "2. Copying card file..."
-scp "$CARD_FILE" "root@${HA_HOST}:${HA_REMOTE_FILE}"
+echo "Deploying ${CARD_NAME} to HA..."
 
-echo "3. Verifying deployment..."
-ssh "root@${HA_HOST}" "ls -la ${HA_REMOTE_FILE}"
+echo "1. Copying card file..."
+ssh "$SSH_TARGET" "mkdir -p '${HA_REMOTE_DIR}'"
+REMOTE_TMP="${HA_REMOTE_FILE}.tmp.$$"
+scp -q "$CARD_FILE" "${SSH_TARGET}:${REMOTE_TMP}"
+ssh "$SSH_TARGET" "mv -f '${REMOTE_TMP}' '${HA_REMOTE_FILE}'"
 
-echo "4. Updating lovelace resource cache tag..."
-FILE_SIZE=$(wc -c < "$CARD_FILE")
-HACSTAG="${FILE_SIZE}0000000000"
+echo "2. Verifying remote checksum..."
+LOCAL_SHA="$(sha256sum "$CARD_FILE" | cut -d' ' -f1)"
+REMOTE_SHA="$(ssh "$SSH_TARGET" "sha256sum '${HA_REMOTE_FILE}'" | cut -d' ' -f1)"
+[[ "$LOCAL_SHA" == "$REMOTE_SHA" ]] || die "remote file checksum does not match local build"
+
+echo "3. Updating lovelace resource cache tag..."
+HACSTAG="${LOCAL_SHA:0:12}"
 RESOURCE_URL="${RESOURCE_URL_BASE}?hacstag=${HACSTAG}"
 echo "   New URL: ${RESOURCE_URL}"
+node "${PROJECT_DIR}/scripts/update-lovelace-resource.mjs" \
+    "$HOMEASSISTANT_URL" "$HOMEASSISTANT_TOKEN" "$RESOURCE_URL" "$CARD_NAME"
 
-UPDATE_SCRIPT="$(cat <<'NODEEOF'
-const WebSocket = require('ws');
-const args = JSON.parse(process.argv[1]);
-const wsUrl = args.url.replace('http', 'ws').replace('https', 'wss') + '/api/websocket';
-const ws = new WebSocket(wsUrl);
-let id = 1;
-let phase = 'list';
-
-ws.on('message', (raw) => {
-    const msg = JSON.parse(raw);
-    if (msg.type === 'auth_required') {
-        ws.send(JSON.stringify({type: 'auth', access_token: args.token}));
-    } else if (msg.type === 'auth_ok') {
-        ws.send(JSON.stringify({type: 'lovelace/resources', id: id++}));
-        phase = 'list';
-    } else if (msg.type === 'result') {
-        const items = Array.isArray(msg.result) ? msg.result : [];
-        const doorbell = items.find(r => r.url && r.url.includes('doorbell-nvr-card'));
-        if (phase === 'list') {
-            if (doorbell) {
-                console.log('   Found existing resource, id:', doorbell.id);
-                phase = 'delete';
-                ws.send(JSON.stringify({
-                    type: 'lovelace/resources/delete',
-                    id: id++,
-                    resource_id: doorbell.id
-                }));
-            } else {
-                console.log('   No existing resource found, creating...');
-                phase = 'create';
-                ws.send(JSON.stringify({
-                    type: 'lovelace/resources/create',
-                    id: id++,
-                    res_type: 'module',
-                    url: args.resourceUrl
-                }));
-            }
-        } else if (phase === 'delete') {
-            if (!msg.success && msg.error?.code !== 'not_found') {
-                console.error('   Failed to delete:', JSON.stringify(msg.error));
-                ws.close();
-                process.exit(1);
-            }
-            console.log('   Deleted old resource');
-            phase = 'create';
-            ws.send(JSON.stringify({
-                type: 'lovelace/resources/create',
-                id: id++,
-                res_type: 'module',
-                url: args.resourceUrl
-            }));
-        } else if (phase === 'create') {
-            if (msg.success) {
-                console.log('   Resource created successfully');
-            } else {
-                console.error('   Failed to create resource:', JSON.stringify(msg.error));
-            }
-            ws.close();
-        }
-    }
-});
-NODEEOF
-)"
-
-node -e "$UPDATE_SCRIPT" "{\"url\":\"${HOMEASSISTANT_URL}\",\"token\":\"${HOMEASSISTANT_TOKEN}\",\"resourceUrl\":\"${RESOURCE_URL}\"}"
+echo "4. Verifying HA serves the deployed build..."
+HTTP_CODE="$(curl -sSL -o "$WORK_FILE" -w '%{http_code}' \
+    -H "Authorization: Bearer ${HOMEASSISTANT_TOKEN}" \
+    "${HOMEASSISTANT_URL%/}${RESOURCE_URL}")" \
+    || die "failed to fetch ${RESOURCE_URL} from HA"
+[[ "$HTTP_CODE" == "200" ]] || die "HA returned HTTP ${HTTP_CODE} for ${RESOURCE_URL}"
+SERVED_SHA="$(sha256sum "$WORK_FILE" | cut -d' ' -f1)"
+[[ "$SERVED_SHA" == "$LOCAL_SHA" ]] || die "HA is serving a different build than the one deployed"
 
 echo ""
 echo "Deployment complete!"

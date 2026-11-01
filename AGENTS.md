@@ -6,7 +6,13 @@ Custom Home Assistant Lovelace card that provides an NVR-like browsing experienc
 
 ## Environment Configuration
 
-All environment-specific values (hostnames, paths, entity IDs, credentials file locations) are in **`local_env.md`** (gitignored). Create it from the structure described below:
+Environment-specific values (hostnames, paths, entity IDs) are documented in **`local_env.md`** (gitignored, optional). The deploy script needs only the HA credentials, which it resolves in this order:
+
+1. `$HOMEASSISTANT_ENV` if set
+2. `<project>/secrets/homeassistant.env`
+3. `<project>/../system/sysadmin/secrets/homeassistant.env`
+
+`HA_SSH_HOST`, `HA_REMOTE_DIR`, and `RESOURCE_URL_BASE` can be overridden as environment variables; they default to the values below.
 
 | Key | Description |
 |-----|-------------|
@@ -24,7 +30,7 @@ All environment-specific values (hostnames, paths, entity IDs, credentials file 
 ## Deploy Target
 
 - Card JS file deploys to `{HA_REMOTE_DIR}/doorbell-nvr-card.js`
-- Registered in `lovelace_resources` via HA WebSocket API (delete old + create new to update cache-busting `?hacstag=`)
+- Registered in `lovelace_resources` via HA WebSocket API (`lovelace/resources/update`, or create if absent) with a content-hash `?hacstag=` cache-busting query string
 - Dashboard: `{HA_DASHBOARD}` → `{HA_DASHBOARD_VIEW}` view
 
 ## Data Source
@@ -60,9 +66,13 @@ bash scripts/deploy.sh  # SCP to HA + update lovelace_resources cache tag via We
 ```
 
 The deploy script:
-1. SCPs `dist/doorbell-nvr-card.js` to `root@{HA_SSH_HOST}:{HA_REMOTE_DIR}/`
-2. Uses HA WebSocket API to delete old resource entry and create new one with updated `?hacstag=` cache-busting query string
-3. `ws` npm package is used for WebSocket communication (dev dependency)
+1. SCPs `dist/doorbell-nvr-card.js` to `root@{HA_SSH_HOST}:{HA_REMOTE_DIR}/` via a temp file, then atomically renames it
+2. Verifies the remote file's SHA-256 matches the local build
+3. Updates the `lovelace_resources` entry via the HA WebSocket API (`update`, or `create` if absent) with a content-hash `?hacstag=` tag
+4. Re-lists resources to confirm registration, then fetches the served URL from HA and verifies its SHA-256 matches the local build
+5. Uses the `ws` npm package for WebSocket communication (dev dependency)
+
+The script fails loudly on any auth, copy, checksum, registration, or HTTP verification error.
 
 **IMPORTANT**: After any code change, you MUST deploy before considering work complete. A change that hasn't been deployed is not done. Run `npm run build && bash scripts/deploy.sh` after every modification. If you skip deploy, tell the user explicitly that the change is not yet deployed.
 
