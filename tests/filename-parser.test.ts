@@ -92,15 +92,21 @@ describe("pairEvents", () => {
     expect(events[0].jpgFilename).toBeNull();
   });
 
-  it("handles multiple independent events", () => {
-    const children = [
-      makeChild("Front garden doorbell_00_20260419090013.mp4", "video"),
-      makeChild("Front garden doorbell_00_20260419090018.jpg", "image"),
+  it("orders events most recent first", () => {
+    const childrenSourcedOutOfOrder = [
       makeChild("Front garden doorbell_00_20260419123038.mp4", "video"),
-      makeChild("Front garden doorbell_00_20260419123042.jpg", "image"),
+      makeChild("Front garden doorbell_00_20260419090013.mp4", "video"),
+      makeChild("Front garden doorbell_00_20260419180000.mp4", "video"),
     ];
-    const events = pairEvents(children, "security/doorbell/2026/04/19");
-    expect(events).toHaveLength(2);
+    const events = pairEvents(
+      childrenSourcedOutOfOrder,
+      "security/doorbell/2026/04/19"
+    );
+    expect(events.map((e) => e.mp4Filename)).toEqual([
+      "Front garden doorbell_00_20260419180000.mp4",
+      "Front garden doorbell_00_20260419123038.mp4",
+      "Front garden doorbell_00_20260419090013.mp4",
+    ]);
   });
 
   it("ignores orphan JPGs that have no MP4 within 15s window", () => {

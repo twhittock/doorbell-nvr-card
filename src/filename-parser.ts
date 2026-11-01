@@ -69,5 +69,7 @@ export function pairEvents(
     });
   }
 
-  return events;
+  return events.sort(
+    (a, b) => b.timestamp.date.getTime() - a.timestamp.date.getTime()
+  );
 }
